@@ -13,6 +13,7 @@ import (
 	handler "github.com/sunao-uehara/go-restapi-sample/handlers"
 	r "github.com/sunao-uehara/go-restapi-sample/router"
 	"github.com/sunao-uehara/go-restapi-sample/storages/mysql"
+	"github.com/sunao-uehara/go-restapi-sample/storages/redis"
 	"go.uber.org/zap"
 )
 
@@ -30,19 +31,21 @@ func main() {
 	wg := &sync.WaitGroup{}
 
 	// initialize mysql
-	db, err := mysql.Initialize(os.Getenv(cmn.MYSQL_URL))
+	sqldbConn, err := mysql.Initialize(os.Getenv(cmn.MYSQL_URL))
 	if err != nil {
 		log.Fatal("unable to initialize mysql", err)
 	}
-	defer db.Close()
+	defer sqldbConn.Close()
 
 	// initialize redis
+	redisClient := redis.Initialize(os.Getenv(cmn.REDIS_URL))
 
 	// initialize handler
 	h := handler.NewHandler(&handler.HandlerOptions{
 		Log:   log,
 		Wg:    wg,
-		Mysql: db,
+		Mysql: sqldbConn,
+		Redis: redisClient,
 	})
 
 	srv := &http.Server{

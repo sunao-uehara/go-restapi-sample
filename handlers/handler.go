@@ -1,14 +1,16 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
-	"time"
 
+	"github.com/go-redis/redis/v8"
 	_ "github.com/go-sql-driver/mysql"
 
 	chi "github.com/go-chi/chi/v5"
@@ -16,6 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	mysql "github.com/sunao-uehara/go-restapi-sample/storages/mysql"
+	myRedis "github.com/sunao-uehara/go-restapi-sample/storages/redis"
 )
 
 type Handler struct {
@@ -24,8 +27,8 @@ type Handler struct {
 type HandlerOptions struct {
 	Wg    *sync.WaitGroup
 	Mysql *sql.DB
-	// Redis
-	Log *zap.SugaredLogger
+	Redis *redis.Client
+	Log   *zap.SugaredLogger
 }
 
 func NewHandler(handlerOptions *HandlerOptions) *Handler {
@@ -54,6 +57,7 @@ func (spr *SamplePostRequest) Bind(r *http.Request) error {
 
 func (h *Handler) SamplePostHandler(w http.ResponseWriter, r *http.Request) {
 	h.Log.Debug("SamplePostHandler")
+	// ctx := r.Context()
 
 	req := &SamplePostRequest{}
 	if err := render.Bind(r, req); err != nil {
@@ -65,23 +69,19 @@ func (h *Handler) SamplePostHandler(w http.ResponseWriter, r *http.Request) {
 	// h.Log.Debugf("param int_val: %d", req.IntVal)
 
 	// write the data into MySQL
-	id, err := mysql.CreateSample(h.Mysql, &mysql.Sample{Foo: req.Foo, IntVal: req.IntVal})
+	sample := &mysql.Sample{Foo: req.Foo, IntVal: req.IntVal}
+	id, err := mysql.CreateSample(h.Mysql, sample)
 	if err != nil {
 		h.Log.Info(err.Error())
 		errorJSONResponse(w, http.StatusInternalServerError, "cannot create record")
 	}
 
-	// execute asynchronously
 	h.Wg.Add(1)
 	go func() {
-		h.Log.Debug("sample goroutien start")
 		defer h.Wg.Done()
 
-		// wait X seconds
-		time.Sleep(3 * time.Second)
-		// write the data into Redis
-
-		h.Log.Debug("sample goroutine done")
+		// purge cache
+		h.purgeCache(context.Background(), []string{"/sample", "/sample/"})
 	}()
 
 	type Res struct {
@@ -93,10 +93,13 @@ func (h *Handler) SamplePostHandler(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) SampleGetHandler(w http.ResponseWriter, r *http.Request) {
 	h.Log.Debug("SampleGetHandler")
+	// ctx := r.Context()
 
 	sampleId := chi.URLParam(r, "sampleId")
 	if sampleId != "" {
-		id, _ := strconv.Atoi(sampleId)
+		id, _ := strconv.ParseInt(sampleId, 10, 64)
+
+		// get the data from mysql
 		data, err := mysql.GetSample(h.Mysql, id)
 		if err != nil {
 			h.Log.Debug(err)
@@ -104,6 +107,20 @@ func (h *Handler) SampleGetHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.Log.Debug(data)
+
+		// execute asynchronously
+		h.Wg.Add(1)
+		go func() {
+			h.Log.Debug("sample goroutine start")
+			defer h.Wg.Done()
+
+			// wait X seconds for testing graceful shutdown for goroutine
+			// time.Sleep(3 * time.Second)
+
+			// write the data into Redis
+			h.setCache(context.Background(), r.URL.Path, data)
+			h.Log.Debug("sample goroutine done")
+		}()
 
 		successJSONResponse(w, data)
 		return
@@ -115,6 +132,13 @@ func (h *Handler) SampleGetHandler(w http.ResponseWriter, r *http.Request) {
 		errorJSONResponse(w, http.StatusNotFound, "Not Found")
 		return
 	}
+
+	// execute asynchronously
+	h.Wg.Add(1)
+	go func() {
+		defer h.Wg.Done()
+		h.setCache(context.Background(), r.URL.Path, data)
+	}()
 
 	successJSONResponse(w, data)
 }
@@ -148,8 +172,7 @@ func (h *Handler) SamplePatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, _ := strconv.Atoi(sampleId)
-
+	id, _ := strconv.ParseInt(sampleId, 10, 64)
 	d := &mysql.Sample{
 		Foo:    req.Foo,
 		IntVal: req.IntVal,
@@ -162,9 +185,42 @@ func (h *Handler) SamplePatchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	h.Log.Debug(rowsAffected, " rows affected")
 
+	h.Wg.Add(1)
+	go func() {
+		defer h.Wg.Done()
+
+		// purge cache
+		endpoints := []string{
+			"/sample",
+			"/sample/",
+			r.URL.Path,
+		}
+		h.purgeCache(context.Background(), endpoints)
+	}()
+
 	type Res struct {
 		Message string `json:"message"`
 	}
 	res := &Res{Message: fmt.Sprintf("%d rows affected", rowsAffected)}
 	successJSONResponse(w, res)
+}
+
+func (h *Handler) setCache(ctx context.Context, endpoint string, data interface{}) {
+	// write the data into Redis
+	d, err := json.Marshal(data)
+	if err != nil {
+		h.Log.Error(err.Error())
+	} else {
+		if err := myRedis.SetCache(context.Background(), h.Redis, endpoint, string(d)); err != nil {
+			h.Log.Error(err.Error())
+		}
+	}
+}
+
+func (h *Handler) purgeCache(ctx context.Context, endpoints []string) {
+	for _, e := range endpoints {
+		if err := myRedis.DelCache(context.Background(), h.Redis, e); err != nil {
+			h.Log.Error(err.Error())
+		}
+	}
 }

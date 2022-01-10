@@ -1,32 +1,34 @@
 package handler
 
-/*
 import (
-	"log"
+	"encoding/json"
 	"net/http"
-	"time"
 
-	s "github.com/sunao-uehara/go-restapi-sample/storages"
+	mysql "github.com/sunao-uehara/go-restapi-sample/storages/mysql"
+	myRedis "github.com/sunao-uehara/go-restapi-sample/storages/redis"
 )
 
-// StatsMiddleware is a middleware that wraps another handler function
-// to calculate and save elapsed time of the endpoint/handler.
-func (h *Handler) StatsMiddleware(nextFunc http.HandlerFunc) http.HandlerFunc {
+func (h *Handler) CacheMiddleware(nextFunc http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
+		ctx := r.Context()
+
+		// do something before `func`
+		h.Log.Debug("before func")
+		// get the data from redis/cache first
+		endpoint := r.URL.Path
+		val, err := myRedis.GetCache(ctx, h.Redis, endpoint)
+		if err == nil && val != "" {
+			s := &mysql.Sample{}
+			if err := json.Unmarshal([]byte(val), s); err == nil {
+				h.Log.Debugf("get sample data from redis: %s", val)
+				successJSONResponse(w, s)
+				return
+			}
+		}
 
 		nextFunc(w, r)
 
-		method := r.Method
-		// TODO: this path contains REST resource id. e.g. /hash/1, it should be excluded to save proper stats by endpoint
-		endpoint := r.URL.Path
-		elapsed := float64(time.Since(start) / time.Microsecond)
-
-		key := method + ":" + endpoint
-		log.Println(key, elapsed)
-
-		// save elapsed time to storaege
-		s.SaveStats(key, elapsed)
+		// do something after `func`
+		h.Log.Debug("after func")
 	}
 }
-*/

@@ -20,8 +20,8 @@ func NewRouter(h *handler.Handler) http.Handler {
 	// /sample
 	r.Route("/sample", func(r chi.Router) {
 		r.Post("/", h.SamplePostHandler)
-		r.Get("/", h.SampleGetHandler)
-		r.Get("/{sampleId}", h.SampleGetHandler)
+		r.Get("/", h.CacheMiddleware(h.SampleGetHandler))
+		r.Get("/{sampleId}", h.CacheMiddleware(h.SampleGetHandler))
 		r.Patch("/{sampleId}", h.SamplePatchHandler)
 		// r.Put("/{sampleId}", h.SamplePostHandler)
 		// r.Delete("/{sampleId}", h.SamplePostHandler)
