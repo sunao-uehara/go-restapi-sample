@@ -13,7 +13,7 @@ const (
 	dbSource = "root:@tcp(127.0.0.1:3306)/go-restapi-sample_test"
 )
 
-var testDBConn *sql.DB
+var testDB *sql.DB
 
 func TestMain(m *testing.M) {
 	db, err := sql.Open("mysql", dbSource)
@@ -21,19 +21,19 @@ func TestMain(m *testing.M) {
 		log.Fatal("cannot connect to db:", err)
 	}
 
-	testDBConn = db
+	testDB = db
 	os.Exit(m.Run())
 }
 
-func createTable(table string) {
+func createTestTable(table string) {
 	sql, err := ioutil.ReadFile("./schemas/" + table + ".sql")
 	if err != nil {
 		panic("cannot load sql file")
 	}
-	testDBConn.Exec(string(sql))
+	testDB.Exec(string(sql))
 }
 
-func deleteTable(table string) {
+func deleteTestTable(table string) {
 	sql := `DROP TABLE ` + table
-	testDBConn.Exec(sql)
+	testDB.Exec(sql)
 }

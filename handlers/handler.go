@@ -69,8 +69,8 @@ func (h *Handler) SamplePostHandler(w http.ResponseWriter, r *http.Request) {
 	// h.Log.Debugf("param int_val: %d", req.IntVal)
 
 	// write the data into MySQL
-	sample := &mysql.Sample{Foo: req.Foo, IntVal: req.IntVal}
-	id, err := mysql.CreateSample(h.Mysql, sample)
+	sc := mysql.NewSample(h.Mysql)
+	id, err := sc.CreateSample(&mysql.SampleData{Foo: req.Foo, IntVal: req.IntVal})
 	if err != nil {
 		h.Log.Info(err.Error())
 		errorJSONResponse(w, http.StatusInternalServerError, "cannot create record")
@@ -100,7 +100,8 @@ func (h *Handler) SampleGetHandler(w http.ResponseWriter, r *http.Request) {
 		id, _ := strconv.ParseInt(sampleId, 10, 64)
 
 		// get the data from mysql
-		data, err := mysql.GetSample(h.Mysql, id)
+		sc := mysql.NewSample(h.Mysql)
+		data, err := sc.GetSample(id)
 		if err != nil {
 			h.Log.Debug(err)
 			errorJSONResponse(w, http.StatusNotFound, "Not Found")
@@ -126,7 +127,8 @@ func (h *Handler) SampleGetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := mysql.GetManySample(h.Mysql)
+	sc := mysql.NewSample(h.Mysql)
+	data, err := sc.GetManySample()
 	if err != nil {
 		h.Log.Debug(err)
 		errorJSONResponse(w, http.StatusNotFound, "Not Found")
@@ -173,11 +175,13 @@ func (h *Handler) SamplePatchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id, _ := strconv.ParseInt(sampleId, 10, 64)
-	d := &mysql.Sample{
+	d := &mysql.SampleData{
 		Foo:    req.Foo,
 		IntVal: req.IntVal,
 	}
-	rowsAffected, err := mysql.UpdateSample(h.Mysql, id, d)
+
+	sc := mysql.NewSample(h.Mysql)
+	rowsAffected, err := sc.UpdateSample(id, d)
 	if err != nil {
 		h.Log.Info(err.Error())
 		errorJSONResponse(w, http.StatusBadRequest, "failed patch request")

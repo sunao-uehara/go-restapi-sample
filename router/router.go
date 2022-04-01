@@ -27,6 +27,12 @@ func NewRouter(h *handler.Handler) http.Handler {
 		// r.Delete("/{sampleId}", h.SamplePostHandler)
 	})
 
+	r.Route("/api/players", func(r chi.Router) {
+		r.Get("/", h.StatsMiddleware(h.PlayersGetHandler))
+		r.Get("/{playerId}", h.PlayersGetHandler)
+		// r.Get("/", h.CacheMiddleware(h.SampleGetHandler))
+		// r.Get("/{playerId}", h.CacheMiddleware(h.SampleGetHandler))
+	})
 	// route not exits
 
 	return r
